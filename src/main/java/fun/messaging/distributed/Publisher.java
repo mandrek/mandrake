@@ -7,10 +7,7 @@ import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 
@@ -29,14 +26,24 @@ public class Publisher implements Runnable {
     private final Map<String, ZMQ.Socket> dealersCache = new HashMap<String, ZMQ.Socket>();
     private final byte[] identity;
     private final MessagePack msgpack = new MessagePack();
+    private final IdentityResolver<ZMQ.Socket> identityResolver;
+    private final ExpressionCache<byte[]> lastValueCache;
+
 
     public Publisher(List<String> brokerStrings, String routerString) {
+        this(brokerStrings, routerString, new IdentityInvoker(), ExpressionCache.DEFAULT);
+    }
+
+
+    public Publisher(List<String> brokerStrings, String routerString, IdentityResolver<ZMQ.Socket> identityResolver, ExpressionCache<byte[]> lastValueCache) {
+        this.lastValueCache = lastValueCache;
         this.identity = getIdentity(DEFAULT_PID, routerString);
         if (brokerStrings != null)
             for (String broker : brokerStrings)
                 addBroker(broker);
 
         this.routerString = routerString;
+        this.identityResolver = identityResolver;
         router = SocketFactory.getInstance().getRouterSocket(context, routerString);
     }
 
@@ -97,8 +104,25 @@ public class Publisher implements Runnable {
         while (!Thread.currentThread().isInterrupted()) {
             byte[] clientIdentity = router.recv();
             if (clientIdentity != null) {
+                byte[] msg = router.recv(ZMQ.DONTWAIT);
                 try {
-                    //router.recv()
+                    if (msg == null)
+                        continue;
+
+                    HandShake hs = msgpack.read(msg, HandShake.class);
+                    switch (hs.getHandShakeType()) {
+                        case REGISTER:
+                            logger.info("Client registered: {}", new String(clientIdentity));
+                            break;
+                        case SUBSCRIBE_AND_QUERY:
+                            logger.info("New Client subrcibription: {}", hs.getHandShakeMsg());
+                            ZMQ.Socket dealer = dealersCache.get(clientIdentity);
+                            if (dealer == null) {
+                                //init dealer
+                            }
+                            //publish initial value
+                            break;
+                    }
 
                 } catch (Exception e) {
                     logger.warn(e);
@@ -119,11 +143,26 @@ public class Publisher implements Runnable {
         int msgSize = Integer.parseInt(args[1]);
         int msgCount = Integer.parseInt(args[2]);
 
+        List<String> brokers = null;
         if (args.length > 3) {
+            brokers = new ArrayList<>();
             for (int i = 3; i < args.length; i++) {
-
+                brokers.add(args[i]);
             }
         }
+        Publisher publisher = new Publisher(brokers, hostname);
+        byte[] msg = new byte[msgCount];
+        Arrays.fill(msg, (byte) 9);
+        //Wait for clients to startup
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            logger.error(e.getMessage(), e);
+        }
+        for (int i = 0; i < msgCount; i++) {
+            publisher.publish("ABCDEFGH".getBytes(), msg);
+        }
+
     }
 
 
