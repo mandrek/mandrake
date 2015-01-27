@@ -8,9 +8,7 @@ import org.zeromq.ZMQ;
 
 import java.io.IOException;
 import java.util.*;
-
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -30,25 +28,32 @@ public class Publisher implements Runnable {
     private final Map<String, ZMQ.Socket> dealersCache = new HashMap<String, ZMQ.Socket>();
     private final byte[] identity;
     private final MessagePack msgpack = new MessagePack();
-    private final IdentityResolver<ZMQ.Socket> identityResolver;
+    private final IdentityResolver<byte[]> identityResolver;
     private final ExpressionCache<byte[]> lastValueCache;
     private final ConcurrentLinkedQueue<byte[]> msgQ = new ConcurrentLinkedQueue<byte[]>();
     private final ReentrantLock pubLock = new ReentrantLock();
+    private final boolean isLastValueCache;
+
     public Publisher(List<String> brokerStrings, String routerString) {
-        this(brokerStrings, routerString, new IdentityInvoker(), ExpressionCache.DEFAULT);
+        this(brokerStrings, routerString, null, ExpressionCache.DEFAULT, true);
     }
 
 
-    public Publisher(List<String> brokerStrings, String routerString, IdentityResolver<ZMQ.Socket> identityResolver, ExpressionCache<byte[]> lastValueCache) {
+    public Publisher(List<String> brokerStrings, String routerString, IdentityResolver<byte[]> identityResolver, ExpressionCache<byte[]> lastValueCache, boolean isLastValueCache) {
         this.lastValueCache = lastValueCache;
+        this.isLastValueCache = isLastValueCache;
         this.identity = getIdentity(DEFAULT_PID, routerString);
         if (brokerStrings != null)
             for (String broker : brokerStrings)
                 addBroker(broker);
 
         this.routerString = routerString;
-        this.identityResolver = identityResolver;
+
         router = SocketFactory.getInstance().getRouterSocket(context, routerString);
+        if (identityResolver != null)
+            this.identityResolver = identityResolver;
+        else
+            this.identityResolver = new IdentityInvoker(router);
     }
 
 
@@ -101,8 +106,16 @@ public class Publisher implements Runnable {
 
     void publish(byte[] topic, byte[] msg) {
         pubLock.lock();
-        identityResolver.invokeIdentitiesFor(topic, msg);
+        try {
+            identityResolver.invokeIdentitiesFor(topic, msg);
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+        }
         pubLock.unlock();
+
+        if (isLastValueCache) {
+            lastValueCache.put(topic, msg);
+        }
     }
 
     @Override
@@ -130,6 +143,10 @@ public class Publisher implements Runnable {
                             break;
                         case SUBSCRIBE_AND_QUERY:
                             logger.info("New Client subrcibription: {}", hs.getHandShakeMsg());
+                            identityResolver.put(hs.getExpression(), identity);
+                            List<byte[]> intialValues = new ArrayList<>();
+                            this.lastValueCache.matchKeyValue(hs.getExpression());
+                            
                             /*
                             ZMQ.Socket dealer = dealersCache.get(clientIdentity);
                             if (dealer == null) {
@@ -138,8 +155,11 @@ public class Publisher implements Runnable {
                             //publish initial value
                             */
                             break;
+                        case QUERY:
+                            break;
                     }
 
+                    /*
                     byte[] topic = msgQ.poll();
 
                     if(topic != null) {
@@ -149,7 +169,7 @@ public class Publisher implements Runnable {
                         }catch (Exception e) {
                             logger.error(e.getMessage(), e);
                         }
-                    }
+                    } */
 
                 } catch (Exception e) {
                     logger.warn(e);
@@ -187,9 +207,12 @@ public class Publisher implements Runnable {
         } catch (InterruptedException e) {
             logger.error(e.getMessage(), e);
         }
+        /*
         for (int i = 0; i < msgCount; i++) {
             publisher.publish("ABCDEFGH".getBytes(), msg);
-        }
+        } */
+        
+        
 
     }
 }

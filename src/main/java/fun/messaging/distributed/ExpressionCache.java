@@ -1,9 +1,9 @@
 package fun.messaging.distributed;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by kuldeep on 1/24/15.
@@ -24,7 +24,7 @@ public interface ExpressionCache<T> {
 
 
     ExpressionCache<byte[]> DEFAULT = new ExpressionCache<byte[]>() {
-        private Map<ByteArrayKey, byte[]> map = new HashMap<>();
+        private Map<ByteArrayKey, byte[]> map = new ConcurrentHashMap<>();
         private final ByteArrayKey bkey = new ByteArrayKey(new byte[]{});
 
         @Override
