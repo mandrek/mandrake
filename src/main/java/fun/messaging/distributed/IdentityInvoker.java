@@ -34,11 +34,11 @@ public class IdentityInvoker implements IdentityResolver<ZMQ.Socket> {
 
     @Override
     public List<ZMQ.Socket> match(byte[] expression) {
-        List<ZMQ.Socket> msgs = new ArrayList<>();
-        ZMQ.Socket msg = map.get(expression);
-        if (msg != null)
-            msgs.add(msg);
-        return msgs;
+        List<ZMQ.Socket> sockets = new ArrayList<>();
+        ZMQ.Socket socket = map.get(expression);
+        if (socket != null)
+            sockets.add(socket);
+        return sockets;
     }
 
     @Override

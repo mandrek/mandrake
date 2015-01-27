@@ -8,7 +8,11 @@ import org.zeromq.ZMQ;
 
 import java.io.IOException;
 import java.util.*;
+
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 /**
@@ -28,8 +32,8 @@ public class Publisher implements Runnable {
     private final MessagePack msgpack = new MessagePack();
     private final IdentityResolver<ZMQ.Socket> identityResolver;
     private final ExpressionCache<byte[]> lastValueCache;
-
-
+    private final ConcurrentLinkedQueue<byte[]> msgQ = new ConcurrentLinkedQueue<byte[]>();
+    private final ReentrantLock pubLock = new ReentrantLock();
     public Publisher(List<String> brokerStrings, String routerString) {
         this(brokerStrings, routerString, new IdentityInvoker(), ExpressionCache.DEFAULT);
     }
@@ -96,12 +100,22 @@ public class Publisher implements Runnable {
 
 
     void publish(byte[] topic, byte[] msg) {
-
+        pubLock.lock();
+        identityResolver.invokeIdentitiesFor(topic, msg);
+        pubLock.unlock();
     }
 
     @Override
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
+            if(!pubLock.tryLock()) {
+                try {
+                    Thread.sleep(1);
+                    continue;
+                } catch (InterruptedException e) {
+                    logger.error(e.getMessage(), e);
+                }
+            }
             byte[] clientIdentity = router.recv();
             if (clientIdentity != null) {
                 byte[] msg = router.recv(ZMQ.DONTWAIT);
@@ -116,12 +130,25 @@ public class Publisher implements Runnable {
                             break;
                         case SUBSCRIBE_AND_QUERY:
                             logger.info("New Client subrcibription: {}", hs.getHandShakeMsg());
+                            /*
                             ZMQ.Socket dealer = dealersCache.get(clientIdentity);
                             if (dealer == null) {
                                 //init dealer
                             }
                             //publish initial value
+                            */
                             break;
+                    }
+
+                    byte[] topic = msgQ.poll();
+
+                    if(topic != null) {
+                        while ((msg = msgQ.poll()) != null) ;
+                        try {
+                            identityResolver.invokeIdentitiesFor(topic, msg);
+                        }catch (Exception e) {
+                            logger.error(e.getMessage(), e);
+                        }
                     }
 
                 } catch (Exception e) {
@@ -129,6 +156,7 @@ public class Publisher implements Runnable {
                 }
             }
 
+            pubLock.unlock();
         }
         try {
             Thread.sleep(60 * 1000);
@@ -164,6 +192,4 @@ public class Publisher implements Runnable {
         }
 
     }
-
-
 }
