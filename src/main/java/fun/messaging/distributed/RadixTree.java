@@ -5,20 +5,22 @@ import java.util.*;
 /**
  * Created by kuldeep
  */
-public class FilterTrie<T> {
+public class RadixTree<T> {
 
-  /*  private final Node<T> root;
-    private final ValueWrapperFactory<T> valueWrapper;
+    private final Node<T> root;
+    private final ValueWrapperFactory<T> wrapperFactory;
 
-    FilterTrie() {
-        valueWrapper = new ValueWrapperFactory<T>() {
+    RadixTree() {
+        wrapperFactory = new ValueWrapperFactory<T>() {
 
             @Override
             public ValueWrapper newInstance(T value) {
+                if(value == null)
+                    return null;
                 return new DefaultValueWrapper(value);
             }
         };
-        root = new Node<T>(null, null, valueWrapper);
+        root = new Node<T>(null, null, wrapperFactory);
         root.children = new Node[2];
 
     }
@@ -58,6 +60,14 @@ public class FilterTrie<T> {
             this.endBit = endBit;
         }
 
+        public Node(byte[] key, ValueWrapper<T> value, int startBit, int endBit, Node<T>[] children) {
+            this.key = key;
+            this.val = value;
+            this.startBit = startBit;
+            this.endBit = endBit;
+            this.children = children;
+        }
+
         void printNode() {
             StringBuffer sb = new StringBuffer();
             printNode(sb, 1);
@@ -86,7 +96,7 @@ public class FilterTrie<T> {
     }
 
 
-    private final <T> void addValueIfAbsent(Node<T> node, T val, ValueWrapperFactory<T> wrapperFactory) {
+    private final void addValueIfAbsent(Node<T> node, T val) {
         if(node.val == null)
             node.val = wrapperFactory.newInstance(val);
         else
@@ -96,7 +106,7 @@ public class FilterTrie<T> {
     public void add(byte[] key, T val) {
         synchronized (root) {
             if (key.length == 0 || key == null)
-                addValueIfAbsent(root, val,valueWrapper);
+                addValueIfAbsent(root, val);
             int side = getBitValue(key[0], 0);
             if (root.children[side] == null)
                 root.children[side] = getNewNode(key, val, 0, 0, 7);
@@ -106,14 +116,14 @@ public class FilterTrie<T> {
     }
 
 
-    public final <T> void add(byte[] key, T val, int keyIdx, Node<T> node) {
+    public final void add(byte[] key, T val, int keyIdx, Node<T> node) {
 
         while (true) {
             boolean searchFurther = handleFirstByte(node, val, key, keyIdx);
             if (!searchFurther)
                 break;
 
-            //KeyIdx incremented inside handle* method
+           //KeyIdx incremented inside handle* method
             searchFurther = handleMiddleBytes(node, val, key, keyIdx);
             if (!searchFurther)
                 break;
@@ -131,7 +141,7 @@ public class FilterTrie<T> {
                 nextStartBit = node.endBit + 1;
 
             if (keyIdx == key.length) {
-                addValueIfAbsent(node,val,valueWrapper); //set or overwrite value
+                addValueIfAbsent(node,val); //set or overwrite value
                 return;
             } else {
                 int side = getBitValue(key[keyIdx], nextStartBit);
@@ -162,24 +172,24 @@ public class FilterTrie<T> {
         return -1;
     }
 
-    static final <T> Node<T> getNewNode(byte[] key, T val, int keyIdx, int startBit, int endBit) {
+    final Node<T> getNewNode(byte[] key, T val, int keyIdx, int startBit, int endBit) {
         if (keyIdx == 0)
-            return new Node<T>(key, val, startBit, endBit);
+            return new Node<T>(key, val, startBit, endBit, wrapperFactory);
 
         byte[] dest = new byte[key.length - keyIdx];
         System.arraycopy(key, keyIdx, dest, 0, dest.length);
-        return new Node<T>(dest, val, startBit, endBit);
+        return new Node<T>(dest, val, startBit, endBit, wrapperFactory);
     }
 
-    *//**
+    /**
      * Based on the index on the given node, split the given node into two nodes.
      * Children of the new node are set to null and based on the start bit of the new node, new node is referenced
      * to parent node
      *
      * @param node
      * @param keyIdx
-     *//*
-    static final <T> void splitMultiByteNode(Node<T> node, int keyIdx, int newKeyIdx, int newEndBit) {
+     */
+    final void splitMultiByteNode(Node<T> node, int keyIdx, int newKeyIdx, int newEndBit) {
         Node<T> tempNode = new Node<T>(Arrays.copyOfRange(node.key, newKeyIdx, node.key.length), node.val,
                 newEndBit == 7 ? 0 : newEndBit + 1, node.endBit, node.children);
 
@@ -199,19 +209,19 @@ public class FilterTrie<T> {
 
     static final <T> void resetChildrenAndValue(Node<T> node, Node<T> tempNode) {
         node.val = null;
-        *//*
+        /*
         if(node.children != null)
             for(int i=0; i < node.children.length ;i++)
                 node.children[i] = null;
-         *//*
+         */
         node.children = new Node[2];
         node.children[getBitValue(tempNode.key[0], tempNode.startBit)] = tempNode;
     }
 
-    *//**
+    /**
      * @return Boolean value indicating if the original node was split
-     *//*
-    static final <T> boolean handleFirstByte(Node<T> node, T val, byte[] key, int keyIdx) {
+     */
+    boolean handleFirstByte(Node<T> node, T val, byte[] key, int keyIdx) {
         byte first = node.key[0];
         int mismatch = getMismatchedBit(first, key[keyIdx], node.startBit, node.key.length == 1 ? node.endBit : 7);
         if (mismatch < 0)   //Perfect Match
@@ -223,14 +233,14 @@ public class FilterTrie<T> {
         return false;
     }
 
-    static final <T> boolean handleMiddleBytes(Node<T> node, T val, byte[] key, int keyIdx) {
+    final boolean handleMiddleBytes(Node<T> node, T val, byte[] key, int keyIdx) {
         if (node.key.length <= 2)
             return true;
         for (int i = 1; i < node.key.length - 1; i++) {
             int idx = keyIdx + i;
             if (idx >= key.length) {
                 splitMultiByteNode(node, i - 1, i, 7);
-                node.val = val;
+                addValueIfAbsent(node, val);
                 return false;
             } else if (key[idx] != node.key[i]) {
                 int mismatch = getMismatchedBit(key[idx], node.key[i], 0, 7);
@@ -247,12 +257,12 @@ public class FilterTrie<T> {
     }
 
 
-    public static final <T> boolean handLastByte(Node<T> node, T val, byte[] key, int keyIdx) {
+    private final boolean handLastByte(Node<T> node, T val, byte[] key, int keyIdx) {
         keyIdx = keyIdx + node.key.length - 1;
         if (node.key.length > 1) {
             if (keyIdx >= key.length) {
                 splitMultiByteNode(node, node.key.length - 2, node.key.length - 1, 7);
-                node.val = val;
+                addValueIfAbsent(node, val);
                 return false;
             } else {
                 byte last = node.key[node.key.length - 1];
@@ -317,7 +327,7 @@ public class FilterTrie<T> {
         return node.endBit == 7 ? ++keyIdx : keyIdx;
     }
 
-    public T get(byte[] key) {
+    public ValueWrapper<T> get(byte[] key) {
         Node<T> node = root;
         int keyIdx = 0;
         final int side = getBitValue(key[keyIdx], 0);
@@ -374,7 +384,7 @@ public class FilterTrie<T> {
     }
 
     public Collection<T> getAllPrefixMatches(byte[] key) {
-
+        return null;
     }
 
 
@@ -390,9 +400,9 @@ public class FilterTrie<T> {
         int k = 2;
         System.out.println(1>>1);
 
-        FilterTrie<String> trie = new FilterTrie<>();
+        RadixTree<String> trie = new RadixTree<>();
         List<String> items = new ArrayList<>();
-        *//*
+        /*
         items.add("C");
         items.add("Z");
         items.add("B");
@@ -430,9 +440,10 @@ public class FilterTrie<T> {
         items.add("QMSD");
         items.add("YASDASD");
 
-        *//*
+        */
+       // trie.print();
         items.add("KBBJDRTOPH");
-        *//*
+        /*
 
         items.add("XJYHMOEQRP");
 
@@ -441,9 +452,9 @@ public class FilterTrie<T> {
 
         items.add("QKGJDXFCPZ");
         items.add("DVHTKYLERV");
-        *//*
+        */
         items.add("KNVWOAJFFP");
-        *//*
+        /*
         items.add("RYXXIBIAIN");
         items.add("RNMVWYZMWE");
         items.add("RCOUWAGSFP");
@@ -453,9 +464,9 @@ public class FilterTrie<T> {
         items.add("SJPRSIZNGA");
         items.add("NXXOOBIPRM");
         items.add("ZWAFMMWBGM");
-        *//*
+        */
         items.add("KDKLHACMQL");
-        // items.add("ESXMXVIBSA");
+       // items.add("ESXMXVIBSA");
         //items.add("NKQOTNUBWF");
         //items.add("DOBTDNKUPI");
         //items.add("KBBJDRTOPH");
@@ -469,7 +480,7 @@ public class FilterTrie<T> {
         trie.root.printNode();
 
         for (String item : items)
-            if (trie.get(item.getBytes()) == null || !item.equals(trie.get(item.getBytes()))) {
+            if (trie.get(item.getBytes()) == null || !item.equals(trie.get(item.getBytes()).get())) {
                 System.out.println(item);
                 trie.get(item.getBytes());
                 //System.out.println(new String(trie.get(item.getBytes())));
@@ -479,5 +490,5 @@ public class FilterTrie<T> {
 
 
         //trie.root.printNode();
-    }*/
+    }
 }
