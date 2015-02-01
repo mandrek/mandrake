@@ -16,14 +16,14 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Created by kuldeep
  */
-public class Publisher implements Runnable {
-    private static final String DEFAULT_PID = "" + System.nanoTime();
+public class Publisher extends AbstractZMQPubSub implements Runnable {
+
     private static final Logger logger = LogManager.getLogger(Publisher.class);
 
     private static final ZContext context = new ZContext();
     private final List<ZMQ.Socket> dealers = new ArrayList<ZMQ.Socket>();
     private final ZMQ.Socket router;
-    private static final AtomicLong identityCounter = new AtomicLong();
+
     private final String routerString;
     private final Map<String, ZMQ.Socket> dealersCache = new HashMap<String, ZMQ.Socket>();
     private final byte[] identity;
@@ -57,9 +57,7 @@ public class Publisher implements Runnable {
     }
 
 
-    static final byte[] getIdentity(String pid, String hostname) {
-        return (pid + "." + hostname + "." + identityCounter.incrementAndGet()).getBytes();
-    }
+
 
 
     public void addBroker(String broker) {

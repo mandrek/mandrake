@@ -1,8 +1,9 @@
 package fun.messaging.distributed;
 
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree;
-import com.googlecode.concurrenttrees.radix.RadixTree;
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultByteArrayNodeFactory;
+import com.googlecode.concurrenttrees.radixinverted.ConcurrentInvertedRadixTree;
+import com.googlecode.concurrenttrees.radixinverted.InvertedRadixTree;
 
 import java.io.UnsupportedEncodingException;
 import java.util.*;
@@ -31,7 +32,7 @@ public class Util {
         return strs;
     }
 
-    public static List<byte[]> converToBytes(List<String> strings) {
+    public static List<byte[]> convertToBytes(List<String> strings) {
 
         List<byte[]> values = new ArrayList<>();
         for (String str : strings) {
@@ -46,24 +47,58 @@ public class Util {
 
     }
 
+    public static final List<String> getAllUniqueVariations(int nofStrings) {
+        double charCount = Math.log(nofStrings)/Math.log(26);
+        char[] str = new char[(int)Math.ceil(charCount)];
+        List<String> strings = new ArrayList<String>();
+        getStringVariations(str,0,strings,nofStrings);
+        return strings;
+    }
+
+    public static boolean getStringVariations(char[] a, int idx, List<String> collector, int nofStrings) {
+        for(int i='A'; i <= 'Z'; i++) {
+            a[idx] = (char)i;
+            if(idx == a.length-1) {
+                collector.add(new String(a));
+                if(nofStrings <= collector.size())
+                    return false;
+            } else {
+                if(!getStringVariations(a,idx + 1,collector,nofStrings))
+                    return false;
+            }
+
+        }
+        return true;
+    }
+
     public static void main(String[] args) {
-        RadixTree<Object> tree = new ConcurrentRadixTree<Object>(new DefaultByteArrayNodeFactory());
+        com.googlecode.concurrenttrees.radix.RadixTree tree = new ConcurrentRadixTree<Object>(new DefaultByteArrayNodeFactory());
         tree.put("SPX", "SPX");
         tree.put("SPY", "SPY");
         tree.put("SPXXX", "SPXX");
 
-        Iterable msgs = tree.getValuesForKeysStartingWith("SPXXY");
+        InvertedRadixTree<String> invTree = new ConcurrentInvertedRadixTree<String>(new DefaultByteArrayNodeFactory());
+        invTree.put("SPX", "SPX");
+        invTree.put("SPY", "SPY");
+        invTree.put("SPXXX", "SPXX");
+        invTree.put("S", "S");
+        invTree.put("SP", "SP");
+
+        Iterable msgs = invTree.getValuesForKeysPrefixing("SPXXXXXXXXXXXXXXXX");
         for (Object msg : msgs)
             System.out.println(msg);
 
-        List<String> strings = getMultipleRandStrings(10, 20);
-        RadixTree<String> t = new ConcurrentRadixTree<>(new DefaultByteArrayNodeFactory());
+        //List<String> strings = getMultipleRandStrings(10, 1000000);
+        List<String> strings = getAllUniqueVariations(100);
+        Collections.shuffle(strings);
+        System.out.println(strings.size());
+        com.googlecode.concurrenttrees.radix.RadixTree t = new ConcurrentRadixTree<>(new DefaultByteArrayNodeFactory());
         long t1 = System.currentTimeMillis();
         for (String str : strings)
             t.put(str, str);
 
         long t2 = System.currentTimeMillis();
-        Map<String, String> map = new HashMap<>();
+        Map<String, String> map = new HashMap<>(strings.size()*2);
         //strings = getMultipleRandStrings(10, 1000000);
         long t3 = System.currentTimeMillis();
 
@@ -93,9 +128,9 @@ public class Util {
 
         System.out.println("Put->Trie: " + (t2 - t1) + " Map: " + (t4 - t3));
         System.out.println("Get->Trie: " + (t6 - t5) + " Map: " + (t8 - t7) + " Prefix: " + (t10 - t9));
-        FilterTrie<byte[]> ft = new FilterTrie<>();
+        RadixTree<byte[]> ft = new RadixTree<>();
 
-        List<byte[]> byteArrays = converToBytes(strings);
+        List<byte[]> byteArrays = convertToBytes(strings);
 
 
         long t11 = System.currentTimeMillis();
@@ -113,11 +148,12 @@ public class Util {
             if (ft.get(str) != null)
                 counter++;
             else {
-                ft.print();
+                //ft.print();
                 //System.out.println(new String(str));
+                /*
                 for (int i = 0; i < byteArrays.size(); i++)
                     System.out.println(new String(byteArrays.get(i)));
-
+                */
                 System.out.println(new String(str));
 
                 break;
